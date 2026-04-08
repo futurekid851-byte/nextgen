@@ -4,6 +4,7 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>NextGen Academy | AI Interface</title>
+    <link rel="icon" href="data:,">
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -27,7 +28,7 @@
         .neural-glow { box-shadow: 0px 0px 40px rgba(162, 255, 191, 0.1); }
         .ai-pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; background: radial-gradient(circle, rgba(162, 255, 191, 0.05) 0%, transparent 70%); z-index: -1; }
         
-        /* The "Live" Recording Animation */
+        /* Interactive States */
         .mic-active {
             background: linear-gradient(to bottom right, #ef4444, #b91c1c) !important;
             color: white !important;
@@ -54,8 +55,8 @@
             
             <div id="content-display" class="w-full h-full flex flex-col items-center justify-center p-8">
                 <div class="text-center">
-                    <h2 class="text-4xl font-headline text-secondary mb-4">Welcome to the Lab</h2>
-                    <p class="text-on-surface-variant opacity-60">Click the microphone to begin your science session.</p>
+                    <h2 class="text-4xl font-headline text-secondary mb-4 italic">Laboratory Initialized</h2>
+                    <p class="text-on-surface-variant opacity-60">Ready for research. Activate neural link via microphone.</p>
                 </div>
             </div>
 
@@ -75,8 +76,8 @@
     </div>
 
     <script>
-        // 1. SETTINGS (PASTE YOUR KEY HERE)
-        const GROQ_API_KEY = "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"; 
+        // 1. SETTINGS - PASTE YOUR GROQ KEY HERE
+        const GROQ_API_KEY = "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"; 
 
         const micBtn = document.getElementById('mic-btn');
         const mediaContent = document.getElementById('content-display');
@@ -87,7 +88,6 @@
         let synth = window.speechSynthesis;
         let recognition;
 
-        // Initialize Speech Recognition
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
@@ -95,12 +95,14 @@
 
             recognition.onresult = (event) => {
                 const userText = event.results[0][0].transcript;
-                updateStatus("Processing...", "animate-pulse bg-yellow-400");
+                updateStatus("Thinking...", "animate-pulse bg-yellow-400");
                 sendToBrain(userText);
             };
 
             recognition.onend = () => {
-                if (isLive && !synth.speaking) recognition.start();
+                if (isLive && !synth.speaking) {
+                    try { recognition.start(); } catch(e) {}
+                }
             };
         }
 
@@ -109,14 +111,13 @@
             statusDot.className = `w-2 h-2 rounded-full ${dotClass}`;
         }
 
-        // The Master Switch (Green to Red / Red to Green)
         micBtn.onclick = () => {
             if (!isLive) {
                 isLive = true;
                 micBtn.classList.add('mic-active');
                 updateStatus("Listening...", "bg-red-500 animate-ping");
                 if (synth.speaking) synth.cancel();
-                recognition.start();
+                try { recognition.start(); } catch(e) {}
             } else {
                 isLive = false;
                 micBtn.classList.remove('mic-active');
@@ -127,13 +128,18 @@
         };
 
         async function sendToBrain(text) {
-            const systemPrompt = `You are Ken, a master Science Tutor. ONLY discuss science. Answer concisely in the user's language (English, Hindi, Bengali). 
-            Return JSON: {"lang":"en-IN","text":"explanation","wiki":"term","img":"prompt"}`;
+            if (synth.speaking) synth.cancel(); 
+
+            const systemPrompt = `You are Ken, a master Science Tutor. ONLY discuss science. Reply in the user's language (English, Hindi, Bengali). 
+            JSON only: {"lang":"en-IN","text":"explanation","wiki":"term","img":"prompt"}`;
 
             try {
                 const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                     method: "POST",
-                    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+                    headers: { 
+                        "Authorization": `Bearer ${GROQ_API_KEY}`, 
+                        "Content-Type": "application/json" 
+                    },
                     body: JSON.stringify({
                         model: "llama-3.1-8b-instant",
                         messages: [{role: "system", content: systemPrompt}, {role: "user", content: text}],
@@ -141,35 +147,43 @@
                     })
                 });
 
+                if (!res.ok) {
+                    const errData = await res.json();
+                    alert("Groq Access Denied: Please check if your API Key is correct.");
+                    updateStatus("Auth Error", "bg-red-600");
+                    return;
+                }
+
                 const data = await res.json();
                 const ai = JSON.parse(data.choices[0].message.content);
 
-                // Fetch 100% Accurate Visuals (Wiki + Pollinations)
+                // Fetch Visuals with Safety Checks
                 const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=allimages&aiprop=url&ailimit=1&aiformat=gif&aifrom=${encodeURIComponent(ai.wiki)}&origin=*&format=json`);
                 const wikiData = await wikiRes.json();
-                const gifUrl = wikiData.query?.allimages[0]?.url || "";
+                const gifUrl = (wikiData.query && wikiData.query.allimages && wikiData.query.allimages.length > 0) ? wikiData.query.allimages[0].url : "";
+                
                 const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(ai.img)}?width=1080&height=720&nologo=true`;
 
-                // Update Visual Board
+                // Render Content
                 mediaContent.innerHTML = `
                     <div class="flex flex-col md:flex-row gap-6 w-full h-full items-center">
                         <img src="${imageUrl}" class="w-full md:w-1/2 h-64 md:h-full object-cover rounded-xl border border-white/10 shadow-2xl">
-                        <div class="w-full md:w-1/2 flex flex-col justify-center">
-                            <h3 class="text-secondary font-headline text-xl mb-4 uppercase tracking-widest">Observation</h3>
+                        <div class="w-full md:w-1/2 flex flex-col justify-center text-left">
+                            <h3 class="text-secondary font-headline text-xl mb-4 uppercase tracking-widest">Neural Link Feed</h3>
                             <p class="text-white text-lg leading-relaxed mb-6">${ai.text}</p>
-                            ${gifUrl ? `<img src="${gifUrl}" class="w-32 h-32 rounded-lg border border-primary/20 object-contain">` : ''}
+                            ${gifUrl ? `<img src="${gifUrl}" class="w-32 h-32 rounded-lg border border-primary/20 object-contain bg-black/20">` : ''}
                         </div>
                     </div>
                 `;
 
-                // Speak
+                // Vocalize
                 const speech = new SpeechSynthesisUtterance(ai.text);
-                speech.lang = ai.lang;
+                speech.lang = ai.lang || 'en-IN';
                 speech.onstart = () => updateStatus("Ken is Speaking", "bg-blue-400 animate-pulse");
                 speech.onend = () => {
                     if (isLive) {
                         updateStatus("Listening...", "bg-red-500 animate-ping");
-                        recognition.start();
+                        try { recognition.start(); } catch(e) {}
                     } else {
                         updateStatus("System Ready", "bg-secondary");
                     }
@@ -177,8 +191,8 @@
                 synth.speak(speech);
 
             } catch (err) {
-                updateStatus("Error Occurred", "bg-red-600");
-                console.error(err);
+                console.error("Critical Error:", err);
+                updateStatus("System Error", "bg-red-600");
             }
         }
     </script>
