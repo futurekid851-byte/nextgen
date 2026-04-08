@@ -43,8 +43,11 @@
 </head>
 <body class="bg-background min-h-screen flex flex-col items-center">
 
-    <header class="flex justify-center items-center py-8 w-full px-6 top-0 z-50">
+    <header class="flex justify-between items-center py-8 w-full max-w-7xl px-6 top-0 z-50">
         <h1 class="text-2xl font-bold text-[#a2ffbf] font-['Space_Grotesk'] tracking-tighter">NextGen Academy</h1>
+        <button onclick="setApiKey()" class="text-[10px] text-secondary/40 hover:text-secondary border border-secondary/20 px-3 py-1 rounded-full transition-all uppercase tracking-widest">
+            [ Connect Brain ]
+        </button>
     </header>
 
     <main class="flex-grow w-full max-w-7xl px-6 pb-24 flex flex-col items-center justify-center relative">
@@ -55,15 +58,15 @@
             
             <div id="content-display" class="w-full h-full flex flex-col items-center justify-center p-8">
                 <div class="text-center">
-                    <h2 class="text-4xl font-headline text-secondary mb-4 italic">Laboratory Initialized</h2>
-                    <p class="text-on-surface-variant opacity-60">Ready for research. Activate neural link via microphone.</p>
+                    <h2 class="text-4xl font-headline text-secondary mb-4 italic">Neural Core Initialized</h2>
+                    <p class="text-on-surface-variant opacity-60">Welcome, Researcher. Connect your brain and activate neural link.</p>
                 </div>
             </div>
 
             <div class="absolute top-6 left-6 flex flex-col gap-2">
                 <div class="flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
                     <span id="status-dot" class="w-2 h-2 rounded-full bg-secondary"></span>
-                    <span id="status-text" class="font-['Space_Grotesk'] text-[10px] uppercase tracking-[0.2em] text-secondary">System Ready</span>
+                    <span id="status-text" class="font-['Space_Grotesk'] text-[10px] uppercase tracking-[0.2em] text-secondary">Awaiting Connection</span>
                 </div>
             </div>
         </div>
@@ -76,8 +79,8 @@
     </div>
 
     <script>
-        // 1. SETTINGS - PASTE YOUR GROQ KEY HERE
-        const GROQ_API_KEY = "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"; 
+        // Use LocalStorage so GitHub doesn't block the API Key
+        let GROQ_API_KEY = localStorage.getItem('nextgen_key') || ""; 
 
         const micBtn = document.getElementById('mic-btn');
         const mediaContent = document.getElementById('content-display');
@@ -88,22 +91,27 @@
         let synth = window.speechSynthesis;
         let recognition;
 
+        if (GROQ_API_KEY) updateStatus("System Ready", "bg-secondary");
+
+        function setApiKey() {
+            const key = prompt("Paste your Groq API Key here (gsk_...):");
+            if (key) {
+                localStorage.setItem('nextgen_key', key.trim());
+                GROQ_API_KEY = key.trim();
+                updateStatus("System Ready", "bg-secondary");
+                alert("Neural link established.");
+            }
+        }
+
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
-            recognition.interimResults = false;
-
             recognition.onresult = (event) => {
-                const userText = event.results[0][0].transcript;
+                const text = event.results[0][0].transcript;
                 updateStatus("Thinking...", "animate-pulse bg-yellow-400");
-                sendToBrain(userText);
+                sendToBrain(text);
             };
-
-            recognition.onend = () => {
-                if (isLive && !synth.speaking) {
-                    try { recognition.start(); } catch(e) {}
-                }
-            };
+            recognition.onend = () => { if (isLive && !synth.speaking) recognition.start(); };
         }
 
         function updateStatus(text, dotClass) {
@@ -112,12 +120,16 @@
         }
 
         micBtn.onclick = () => {
+            if (!GROQ_API_KEY) {
+                setApiKey();
+                return;
+            }
             if (!isLive) {
                 isLive = true;
                 micBtn.classList.add('mic-active');
                 updateStatus("Listening...", "bg-red-500 animate-ping");
                 if (synth.speaking) synth.cancel();
-                try { recognition.start(); } catch(e) {}
+                recognition.start();
             } else {
                 isLive = false;
                 micBtn.classList.remove('mic-active');
@@ -127,72 +139,50 @@
             }
         };
 
-        async function sendToBrain(text) {
-            if (synth.speaking) synth.cancel(); 
+        async function sendToBrain(userText) {
+            if (synth.speaking) synth.cancel();
 
-            const systemPrompt = `You are Ken, a master Science Tutor. ONLY discuss science. Reply in the user's language (English, Hindi, Bengali). 
-            JSON only: {"lang":"en-IN","text":"explanation","wiki":"term","img":"prompt"}`;
+            const sys = `You are Ken, a Science Tutor. Respond in the user's language (English, Hindi, Bengali). JSON: {"lang":"en-IN","text":"...","wiki":"term","img":"prompt"}`;
 
             try {
                 const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                     method: "POST",
-                    headers: { 
-                        "Authorization": `Bearer ${GROQ_API_KEY}`, 
-                        "Content-Type": "application/json" 
-                    },
+                    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
                     body: JSON.stringify({
                         model: "llama-3.1-8b-instant",
-                        messages: [{role: "system", content: systemPrompt}, {role: "user", content: text}],
+                        messages: [{role: "system", content: sys}, {role: "user", content: userText}],
                         response_format: { type: "json_object" }
                     })
                 });
 
-                if (!res.ok) {
-                    const errData = await res.json();
-                    alert("Groq Access Denied: Please check if your API Key is correct.");
-                    updateStatus("Auth Error", "bg-red-600");
-                    return;
-                }
-
+                if (!res.ok) throw new Error("Key Error");
                 const data = await res.json();
                 const ai = JSON.parse(data.choices[0].message.content);
 
-                // Fetch Visuals with Safety Checks
-                const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=allimages&aiprop=url&ailimit=1&aiformat=gif&aifrom=${encodeURIComponent(ai.wiki)}&origin=*&format=json`);
-                const wikiData = await wikiRes.json();
-                const gifUrl = (wikiData.query && wikiData.query.allimages && wikiData.query.allimages.length > 0) ? wikiData.query.allimages[0].url : "";
-                
-                const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(ai.img)}?width=1080&height=720&nologo=true`;
+                const wiki = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=allimages&aiprop=url&ailimit=1&aiformat=gif&aifrom=${encodeURIComponent(ai.wiki)}&origin=*&format=json`);
+                const wData = await wiki.json();
+                const gif = (wData.query?.allimages?.length > 0) ? wData.query.allimages[0].url : "";
+                const img = `https://image.pollinations.ai/prompt/${encodeURIComponent(ai.img)}?width=1080&height=720&nologo=true`;
 
-                // Render Content
                 mediaContent.innerHTML = `
-                    <div class="flex flex-col md:flex-row gap-6 w-full h-full items-center">
-                        <img src="${imageUrl}" class="w-full md:w-1/2 h-64 md:h-full object-cover rounded-xl border border-white/10 shadow-2xl">
-                        <div class="w-full md:w-1/2 flex flex-col justify-center text-left">
-                            <h3 class="text-secondary font-headline text-xl mb-4 uppercase tracking-widest">Neural Link Feed</h3>
-                            <p class="text-white text-lg leading-relaxed mb-6">${ai.text}</p>
-                            ${gifUrl ? `<img src="${gifUrl}" class="w-32 h-32 rounded-lg border border-primary/20 object-contain bg-black/20">` : ''}
+                    <div class="flex flex-col md:flex-row gap-8 w-full h-full items-center p-4">
+                        <img src="${img}" class="w-full md:w-1/2 max-h-full object-cover rounded-2xl border border-white/5 shadow-2xl">
+                        <div class="w-full md:w-1/2 text-left">
+                            <h3 class="text-secondary font-headline text-xs uppercase tracking-[0.3em] mb-4">Laboratory Output</h3>
+                            <p class="text-white text-xl font-light leading-relaxed mb-6">${ai.text}</p>
+                            ${gif ? `<img src="${gif}" class="w-24 h-24 rounded-lg border border-secondary/20 bg-black/40">` : ''}
                         </div>
-                    </div>
-                `;
+                    </div>`;
 
-                // Vocalize
                 const speech = new SpeechSynthesisUtterance(ai.text);
-                speech.lang = ai.lang || 'en-IN';
+                speech.lang = ai.lang;
                 speech.onstart = () => updateStatus("Ken is Speaking", "bg-blue-400 animate-pulse");
-                speech.onend = () => {
-                    if (isLive) {
-                        updateStatus("Listening...", "bg-red-500 animate-ping");
-                        try { recognition.start(); } catch(e) {}
-                    } else {
-                        updateStatus("System Ready", "bg-secondary");
-                    }
-                };
+                speech.onend = () => { if (isLive) recognition.start(); else updateStatus("System Ready", "bg-secondary"); };
                 synth.speak(speech);
 
             } catch (err) {
-                console.error("Critical Error:", err);
-                updateStatus("System Error", "bg-red-600");
+                updateStatus("Check Connection", "bg-red-600");
+                localStorage.removeItem('nextgen_key'); // Clear key if bad
             }
         }
     </script>
