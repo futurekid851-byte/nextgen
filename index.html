@@ -28,7 +28,6 @@
         .neural-glow { box-shadow: 0px 0px 40px rgba(162, 255, 191, 0.1); }
         .ai-pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; background: radial-gradient(circle, rgba(162, 255, 191, 0.05) 0%, transparent 70%); z-index: -1; }
         
-        /* Interactive States */
         .mic-active {
             background: linear-gradient(to bottom right, #ef4444, #b91c1c) !important;
             color: white !important;
@@ -58,15 +57,15 @@
             
             <div id="content-display" class="w-full h-full flex flex-col items-center justify-center p-8">
                 <div class="text-center">
-                    <h2 class="text-4xl font-headline text-secondary mb-4 italic">Neural Core Initialized</h2>
-                    <p class="text-on-surface-variant opacity-60">Welcome, Researcher. Connect your brain and activate neural link.</p>
+                    <h2 class="text-4xl font-headline text-secondary mb-4 italic">Neural Core Active</h2>
+                    <p class="text-on-surface-variant opacity-60">Establish neural link by clicking the microphone below.</p>
                 </div>
             </div>
 
             <div class="absolute top-6 left-6 flex flex-col gap-2">
                 <div class="flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
                     <span id="status-dot" class="w-2 h-2 rounded-full bg-secondary"></span>
-                    <span id="status-text" class="font-['Space_Grotesk'] text-[10px] uppercase tracking-[0.2em] text-secondary">Awaiting Connection</span>
+                    <span id="status-text" class="font-['Space_Grotesk'] text-[10px] uppercase tracking-[0.2em] text-secondary">Awaiting Input</span>
                 </div>
             </div>
         </div>
@@ -79,7 +78,6 @@
     </div>
 
     <script>
-        // Use LocalStorage so GitHub doesn't block the API Key
         let GROQ_API_KEY = localStorage.getItem('nextgen_key') || ""; 
 
         const micBtn = document.getElementById('mic-btn');
@@ -88,30 +86,41 @@
         const statusDot = document.getElementById('status-dot');
 
         let isLive = false;
+        let isRecognizing = false;
         let synth = window.speechSynthesis;
         let recognition;
 
         if (GROQ_API_KEY) updateStatus("System Ready", "bg-secondary");
 
         function setApiKey() {
-            const key = prompt("Paste your Groq API Key here (gsk_...):");
+            const key = prompt("Paste your Groq API Key (gsk_...):");
             if (key) {
                 localStorage.setItem('nextgen_key', key.trim());
                 GROQ_API_KEY = key.trim();
                 updateStatus("System Ready", "bg-secondary");
-                alert("Neural link established.");
+                alert("Connection Established.");
             }
         }
 
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
+            
+            recognition.onstart = () => { isRecognizing = true; };
+            recognition.onend = () => { 
+                isRecognizing = false;
+                if (isLive && !synth.speaking) {
+                    setTimeout(() => {
+                        if (isLive && !isRecognizing && !synth.speaking) recognition.start();
+                    }, 400);
+                }
+            };
+
             recognition.onresult = (event) => {
                 const text = event.results[0][0].transcript;
                 updateStatus("Thinking...", "animate-pulse bg-yellow-400");
                 sendToBrain(text);
             };
-            recognition.onend = () => { if (isLive && !synth.speaking) recognition.start(); };
         }
 
         function updateStatus(text, dotClass) {
@@ -120,16 +129,13 @@
         }
 
         micBtn.onclick = () => {
-            if (!GROQ_API_KEY) {
-                setApiKey();
-                return;
-            }
+            if (!GROQ_API_KEY) { setApiKey(); return; }
             if (!isLive) {
                 isLive = true;
                 micBtn.classList.add('mic-active');
                 updateStatus("Listening...", "bg-red-500 animate-ping");
                 if (synth.speaking) synth.cancel();
-                recognition.start();
+                if (!isRecognizing) recognition.start();
             } else {
                 isLive = false;
                 micBtn.classList.remove('mic-active');
@@ -142,7 +148,8 @@
         async function sendToBrain(userText) {
             if (synth.speaking) synth.cancel();
 
-            const sys = `You are Ken, a Science Tutor. Respond in the user's language (English, Hindi, Bengali). JSON: {"lang":"en-IN","text":"...","wiki":"term","img":"prompt"}`;
+            const sys = `You are Ken, a master Science Tutor. Respond in the language used by the user (English, Hindi, Bengali). 
+            JSON only: {"lang":"en-IN","text":"explanation","wiki":"science term","img":"detailed prompt"}`;
 
             try {
                 const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -155,7 +162,7 @@
                     })
                 });
 
-                if (!res.ok) throw new Error("Key Error");
+                if (!res.ok) throw new Error("API Connection Failed");
                 const data = await res.json();
                 const ai = JSON.parse(data.choices[0].message.content);
 
@@ -168,21 +175,32 @@
                     <div class="flex flex-col md:flex-row gap-8 w-full h-full items-center p-4">
                         <img src="${img}" class="w-full md:w-1/2 max-h-full object-cover rounded-2xl border border-white/5 shadow-2xl">
                         <div class="w-full md:w-1/2 text-left">
-                            <h3 class="text-secondary font-headline text-xs uppercase tracking-[0.3em] mb-4">Laboratory Output</h3>
+                            <h3 class="text-secondary font-headline text-xs uppercase tracking-[0.3em] mb-4">Neural Data Stream</h3>
                             <p class="text-white text-xl font-light leading-relaxed mb-6">${ai.text}</p>
                             ${gif ? `<img src="${gif}" class="w-24 h-24 rounded-lg border border-secondary/20 bg-black/40">` : ''}
                         </div>
                     </div>`;
 
                 const speech = new SpeechSynthesisUtterance(ai.text);
-                speech.lang = ai.lang;
-                speech.onstart = () => updateStatus("Ken is Speaking", "bg-blue-400 animate-pulse");
-                speech.onend = () => { if (isLive) recognition.start(); else updateStatus("System Ready", "bg-secondary"); };
+                speech.lang = ai.lang || 'en-IN';
+                speech.onstart = () => {
+                    updateStatus("Ken is Speaking", "bg-blue-400 animate-pulse");
+                    if(isRecognizing) recognition.stop();
+                };
+                speech.onend = () => { 
+                    if (isLive) {
+                        setTimeout(() => {
+                            if (isLive && !isRecognizing) recognition.start();
+                        }, 500);
+                    } else {
+                        updateStatus("System Ready", "bg-secondary");
+                    }
+                };
                 synth.speak(speech);
 
             } catch (err) {
-                updateStatus("Check Connection", "bg-red-600");
-                localStorage.removeItem('nextgen_key'); // Clear key if bad
+                updateStatus("Check Link", "bg-red-600");
+                console.error(err);
             }
         }
     </script>
