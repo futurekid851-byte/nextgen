@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>NextGen Academy | AI Interface</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+          tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                "colors": {
+                        "secondary": "#63f3ba",
+                        "primary": "#a2ffbf",
+                        "surface-container-high": "#1b211e",
+                        "background": "#0b0f0d"
+                },
+              },
+            },
+          }
+    </script>
+    <style>
+        body { background-color: #0b0f0d; color: #f4f7f3; font-family: 'Manrope', sans-serif; overflow: hidden; }
+        .neural-glow { box-shadow: 0px 0px 40px rgba(162, 255, 191, 0.1); }
+        .ai-pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; background: radial-gradient(circle, rgba(162, 255, 191, 0.05) 0%, transparent 70%); z-index: -1; }
+        
+        /* The "Live" Recording Animation */
+        .mic-active {
+            background: linear-gradient(to bottom right, #ef4444, #b91c1c) !important;
+            color: white !important;
+            animation: pulse-red 1.5s infinite !important;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); transform: scale(1); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); transform: scale(1.05); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-background min-h-screen flex flex-col items-center">
+
+    <header class="flex justify-center items-center py-8 w-full px-6 top-0 z-50">
+        <h1 class="text-2xl font-bold text-[#a2ffbf] font-['Space_Grotesk'] tracking-tighter">NextGen Academy</h1>
+    </header>
+
+    <main class="flex-grow w-full max-w-7xl px-6 pb-24 flex flex-col items-center justify-center relative">
+        <div class="ai-pulse"></div>
+        
+        <div class="w-full h-[70vh] rounded-xl overflow-hidden bg-surface-container-high neural-glow relative group" id="media-content">
+            <div class="absolute inset-0 bg-gradient-to-tr from-black/40 to-transparent pointer-events-none"></div>
+            
+            <div id="content-display" class="w-full h-full flex flex-col items-center justify-center p-8">
+                <div class="text-center">
+                    <h2 class="text-4xl font-headline text-secondary mb-4">Welcome to the Lab</h2>
+                    <p class="text-on-surface-variant opacity-60">Click the microphone to begin your science session.</p>
+                </div>
+            </div>
+
+            <div class="absolute top-6 left-6 flex flex-col gap-2">
+                <div class="flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-secondary"></span>
+                    <span id="status-text" class="font-['Space_Grotesk'] text-[10px] uppercase tracking-[0.2em] text-secondary">System Ready</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="fixed bottom-0 right-0 z-50 flex items-center justify-center">
+        <button id="mic-btn" class="rounded-full w-20 h-20 mb-8 mr-8 flex items-center justify-center bg-gradient-to-br from-[#a2ffbf] to-[#63f3ba] text-[#006437] transition-all duration-300 group relative">
+            <span class="material-symbols-outlined text-4xl">mic</span>
+        </button>
+    </div>
+
+    <script>
+        // 1. SETTINGS (PASTE YOUR KEY HERE)
+        const GROQ_API_KEY = "PASTE_YOUR_GROQ_KEY_HERE"; 
+
+        const micBtn = document.getElementById('mic-btn');
+        const mediaContent = document.getElementById('content-display');
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-dot');
+
+        let isLive = false;
+        let synth = window.speechSynthesis;
+        let recognition;
+
+        // Initialize Speech Recognition
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onresult = (event) => {
+                const userText = event.results[0][0].transcript;
+                updateStatus("Processing...", "animate-pulse bg-yellow-400");
+                sendToBrain(userText);
+            };
+
+            recognition.onend = () => {
+                if (isLive && !synth.speaking) recognition.start();
+            };
+        }
+
+        function updateStatus(text, dotClass) {
+            statusText.innerText = text;
+            statusDot.className = `w-2 h-2 rounded-full ${dotClass}`;
+        }
+
+        // The Master Switch (Green to Red / Red to Green)
+        micBtn.onclick = () => {
+            if (!isLive) {
+                isLive = true;
+                micBtn.classList.add('mic-active');
+                updateStatus("Listening...", "bg-red-500 animate-ping");
+                if (synth.speaking) synth.cancel();
+                recognition.start();
+            } else {
+                isLive = false;
+                micBtn.classList.remove('mic-active');
+                updateStatus("System Ready", "bg-secondary");
+                recognition.stop();
+                synth.cancel();
+            }
+        };
+
+        async function sendToBrain(text) {
+            const systemPrompt = `You are Ken, a master Science Tutor. ONLY discuss science. Answer concisely in the user's language (English, Hindi, Bengali). 
+            Return JSON: {"lang":"en-IN","text":"explanation","wiki":"term","img":"prompt"}`;
+
+            try {
+                const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: "llama-3.1-8b-instant",
+                        messages: [{role: "system", content: systemPrompt}, {role: "user", content: text}],
+                        response_format: { type: "json_object" }
+                    })
+                });
+
+                const data = await res.json();
+                const ai = JSON.parse(data.choices[0].message.content);
+
+                // Fetch 100% Accurate Visuals (Wiki + Pollinations)
+                const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=allimages&aiprop=url&ailimit=1&aiformat=gif&aifrom=${encodeURIComponent(ai.wiki)}&origin=*&format=json`);
+                const wikiData = await wikiRes.json();
+                const gifUrl = wikiData.query?.allimages[0]?.url || "";
+                const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(ai.img)}?width=1080&height=720&nologo=true`;
+
+                // Update Visual Board
+                mediaContent.innerHTML = `
+                    <div class="flex flex-col md:flex-row gap-6 w-full h-full items-center">
+                        <img src="${imageUrl}" class="w-full md:w-1/2 h-64 md:h-full object-cover rounded-xl border border-white/10 shadow-2xl">
+                        <div class="w-full md:w-1/2 flex flex-col justify-center">
+                            <h3 class="text-secondary font-headline text-xl mb-4 uppercase tracking-widest">Observation</h3>
+                            <p class="text-white text-lg leading-relaxed mb-6">${ai.text}</p>
+                            ${gifUrl ? `<img src="${gifUrl}" class="w-32 h-32 rounded-lg border border-primary/20 object-contain">` : ''}
+                        </div>
+                    </div>
+                `;
+
+                // Speak
+                const speech = new SpeechSynthesisUtterance(ai.text);
+                speech.lang = ai.lang;
+                speech.onstart = () => updateStatus("Ken is Speaking", "bg-blue-400 animate-pulse");
+                speech.onend = () => {
+                    if (isLive) {
+                        updateStatus("Listening...", "bg-red-500 animate-ping");
+                        recognition.start();
+                    } else {
+                        updateStatus("System Ready", "bg-secondary");
+                    }
+                };
+                synth.speak(speech);
+
+            } catch (err) {
+                updateStatus("Error Occurred", "bg-red-600");
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
